@@ -7,6 +7,8 @@ import (
 	serial "github.com/8power/ublox-bluetooth/serial"
 )
 
+const TestDeviceMAC = "CHANGE"
+
 func TestGetVersion(t *testing.T) {
 	ub, err := setupBluetooth()
 	if err != nil {
@@ -14,7 +16,7 @@ func TestGetVersion(t *testing.T) {
 	}
 	defer ub.Close()
 
-	err = connectToDevice("CE1A0B7E9D79r", func(t *testing.T) error {
+	err = connectToDevice(TestDeviceMAC, func(t *testing.T) error {
 		defer ub.DisconnectFromDevice()
 
 		v, err := ub.GetVersion()
@@ -36,7 +38,7 @@ func TestConfiguration(t *testing.T) {
 	}
 	defer ub.Close()
 
-	err = connectToDevice("CE1A0B7E9D79r", func(t *testing.T) error {
+	err = connectToDevice(TestDeviceMAC, func(t *testing.T) error {
 		defer ub.DisconnectFromDevice()
 		ub.PeerList()
 
