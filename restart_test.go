@@ -101,10 +101,10 @@ func TestRestart(t *testing.T) {
 		handleFatal("RebootUblox error", err)
 	}
 
-	err = bt.EnterExtendedDataMode()
+	/*err = bt.EnterExtendedDataMode()
 	if err != nil {
 		handleFatal("EnterExtendedDataMode error", err)
-	}
+	}*/
 
 	err = bt.MultipleATCommands()
 	if err != nil {

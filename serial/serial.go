@@ -132,7 +132,7 @@ func (sp *SerialPort) SetBaudRate(baudrate BaudRate, readTimeout time.Duration) 
 	return nil
 }
 
-// Write write's the passed byte array to the serial port
+// Write writes the passed byte array to the serial port
 func (sp *SerialPort) Write(b []byte) error {
 	showOutMsg(b)
 	_, err := sp.file.Write(b)

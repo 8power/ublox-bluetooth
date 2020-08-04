@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-)
 
-const edmStartByte = byte(0xAA)
-const edmStopByte = byte(0x55)
-const edmPayloadOverhead = 4
+	"github.com/8power/ublox-bluetooth/serial"
+)
 
 // EMDCmdResp holds EDM CoMmanD and the expected RESPonse
 type EMDCmdResp struct {
@@ -19,11 +17,11 @@ type EMDCmdResp struct {
 // NewEMDCmdBytes creates an EDM command containing the `payload` content
 func NewEMDCmdBytes(payload []byte) []byte {
 	l := uint16(len(payload))
-	b := make([]byte, l+edmPayloadOverhead)
-	b[0] = edmStartByte
+	b := make([]byte, l+serial.EDMPayloadOverhead)
+	b[0] = serial.EDMStartByte
 	binary.BigEndian.PutUint16(b[1:], l)
 	copy(b[3:], payload)
-	b[3+l] = edmStopByte
+	b[3+l] = serial.EDMStopByte
 	return b
 }
 

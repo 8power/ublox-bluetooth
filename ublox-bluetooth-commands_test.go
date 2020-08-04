@@ -9,11 +9,68 @@ import (
 	"github.com/pkg/errors"
 )
 
-const serviceUUIDLength = 42
-const serviceUUIDHeaderLength = 10
-const serviceUUID = "23E1B7EA5F782315A7BEADDE10138888"
+type DownloadSequence struct {
+	Sequence   int
+	ToDownload bool
+}
 
-// TestUbloxBluetoothCommands treads through the list of implemented commands
+type DownloadSequences struct {
+	Array []DownloadSequence
+}
+
+func NewDownloadSequences() DownloadSequences {
+	return DownloadSequences{
+		Array: []DownloadSequence{},
+	}
+}
+
+func (s *DownloadSequences) GetDownloadList(currentSequenceNumber int, count int, lastSequenceRead int) []int {
+	startingSequenceNumber := int(currentSequenceNumber - count)
+	if lastSequenceRead == 0 {
+		for i := startingSequenceNumber; i <= currentSequenceNumber; i++ {
+			ds := DownloadSequence{
+				Sequence:   i,
+				ToDownload: true,
+			}
+			s.Array = append(s.Array, ds)
+		}
+	} else {
+		cutPoint := 0
+		for i := 0; i <= len(s.Array)/2; i++ {
+			if s.Array[i].ToDownload {
+				cutPoint = i
+				break
+			}
+		}
+
+		if cutPoint > 0 {
+			s.Array = s.Array[cutPoint:]
+		}
+	}
+
+	downloadList := []int{}
+	lenSeq := len(s.Array) - 1
+	for i := 0; i < lenSeq; i++ {
+		if s.Array[i].ToDownload {
+			downloadList = append(downloadList, s.Array[i].Sequence)
+		}
+		if len(downloadList) > 9 {
+			break
+		}
+	}
+
+	if s.Array[lenSeq].ToDownload {
+		if downloadList[len(downloadList)-1] != s.Array[lenSeq].Sequence {
+			downloadList = append(downloadList, s.Array[lenSeq].Sequence)
+		}
+	}
+	return downloadList
+}
+
+func (s *DownloadSequences) UpdateDownloaded(downloaded []int) {
+
+}
+
 func TestUbloxBluetoothCommands(t *testing.T) {
 	defer leaktest.Check(t)()
 	serial.SetVerbose(true)
@@ -23,7 +80,7 @@ func TestUbloxBluetoothCommands(t *testing.T) {
 	}
 	defer ub.Close()
 
-	err = connectToDevice("EAA4997A81C4r", func(t *testing.T) error {
+	err = connectToDevice("FFA73E733B27r", func(t *testing.T) error {
 		version, err := ub.GetVersion()
 		if err != nil {
 			t.Fatalf("GetVersion error %v\n", err)
@@ -43,10 +100,6 @@ func TestUbloxBluetoothCommands(t *testing.T) {
 		}
 		fmt.Printf("[GetTime] Current timestamp %d\n", time)
 
-		/*if version.SoftwareVersion != "3.0" {
-			t.Fatalf("Cannot continue with version %s, needs to be 2.1\n", version.SoftwareVersion)
-		}*/
-
 		config, err := ub.ReadConfig()
 		if err != nil {
 			t.Fatalf("ReadConfig error %v\n", err)
@@ -65,45 +118,46 @@ func TestUbloxBluetoothCommands(t *testing.T) {
 		}
 		fmt.Printf("[ReadRecorderInfo] SequenceNo: %d. Count: %d. SlotUsage: %d. PoolUsage: %d.\n", info.SequenceNo, info.Count, info.SlotUsage, info.PoolUsage)
 
-		var lastSequenceRead uint32
-		dataSequences := []uint32{}
+		/*
+			var lastSequenceRead uint32
+			dataSequences := []uint32{}
 
-		err = ub.ReadRecorder(0, func(e *VehEvent) error {
-			fmt.Printf("Sequence: %d\n", e.Sequence)
-			lastSequenceRead = e.Sequence
-			if e.DataFlag {
-				dataSequences = append(dataSequences, e.Sequence)
-			}
-			return nil
-		})
-		if err != nil {
-			t.Errorf("ReadRecorder error %v\n", err)
-		}
-		fmt.Printf("[ReadRecorder] Final Sequence %d events\n", lastSequenceRead)
-		fmt.Printf("[ReadRecorder] has %d data sequences to download\n", len(dataSequences))
-
-		for _, s := range dataSequences {
-			meta, err := ub.QueryRecorderMetaDataCommand(s)
+			err = ub.ReadRecorder(0, func(e *VehEvent) error {
+				fmt.Printf("Sequence: %d\n", e.Sequence)
+				lastSequenceRead = e.Sequence
+				if e.DataFlag {
+					dataSequences = append(dataSequences, e.Sequence)
+				}
+				return nil
+			})
 			if err != nil {
-				t.Errorf("QueryRecorderMetaDataCommand error %v", err)
-			} else {
-				fmt.Printf("Metadata - Valid: %t\tLength: %d\tCRC: %X", meta.Valid, meta.Length, meta.Crc)
-				if meta.Valid {
+				t.Errorf("ReadRecorder error %v\n", err)
+			}
+			fmt.Printf("[ReadRecorder] Final Sequence %d events\n", lastSequenceRead)
+			fmt.Printf("[ReadRecorder] has %d data sequences to download\n", len(dataSequences))
 
+			for _, s := range dataSequences {
+				meta, err := ub.QueryRecorderMetaDataCommand(s)
+				if err != nil {
+					t.Errorf("QueryRecorderMetaDataCommand error %v", err)
+				} else {
+					fmt.Printf("Metadata - Valid: %t\tLength: %d\tCRC: %X", meta.Valid, meta.Length, meta.Crc)
+					if meta.Valid {
+
+					}
 				}
 			}
-		}
 
-		err = ub.DisconnectFromDevice()
-		if err != nil {
-			t.Errorf("DisconnectFromDevice error %v\n", err)
-		}
+			err = ub.DisconnectFromDevice()
+			if err != nil {
+				t.Errorf("DisconnectFromDevice error %v\n", err)
+			}*/
 		return err
 	}, ub, t)
-
 	if err != nil {
 		t.Errorf("exerciseTheDevice error %v\n", err)
 	}
+
 }
 
 func TestPagedDownloads(t *testing.T) {
