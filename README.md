@@ -27,6 +27,13 @@ The main Ublox functionality resides in the main directory. The functionality of
 * `TestGetVersion` configures the bluetooth environment, connects to the sensor defined by `TestDeviceMAC` (which needs to be defined), and then gets the Sensor's software, hardware and release version information.
 * `TestConfiguration` configures the bluetooth environment, connects to the sensor defined by `TestDeviceMAC` (which needs to be defined), reads the sensor's config, makes a change to the config and writes it back to the sensor.
 
+### dangerous_test.go
+
+* `TestSettingDTRAction` opens a connection to Ublox then sets the DTR behaviour to 4 (as defined in ublox-at-commands), it then performs different resets.
+* `TestRebootRecorder` shows the issuing of the command to reboot the Bluetooth connected sensor.
+* `TestErase` demonstrates the `EraseRecorder` command to instruct the Bluetooth connected sensor. You will need to change the device MAC to suit your equipment.
+
+
 ### restart_test.go
 
 Exercises the various restart methods supported by the library.

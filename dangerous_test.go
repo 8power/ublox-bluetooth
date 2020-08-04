@@ -37,15 +37,6 @@ func TestSettingDTRAction(t *testing.T) {
 	}
 }
 
-func TestDongleReboot(t *testing.T) {
-	serial.SetVerbose(true)
-	ub, err := NewUbloxBluetooth(timeout)
-	if err != nil {
-		t.Fatalf("NewUbloxBluetooth error %v", err)
-	}
-	defer ub.Close()
-}
-
 func TestRebootRecorder(t *testing.T) {
 	ub, err := setupBluetooth()
 	if err != nil {
@@ -85,11 +76,6 @@ func TestErase(t *testing.T) {
 		if e != nil {
 			return errors.Wrap(e, "EraseRecorder error")
 		}
-
-		/*e = ub.DisconnectFromDevice()
-		if e != nil {
-			return errors.Wrap(e, "DisconnectFromDevice error")
-		}*/
 		return nil
 	}, ub, t)
 
