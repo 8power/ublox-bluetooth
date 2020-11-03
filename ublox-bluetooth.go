@@ -515,15 +515,9 @@ func (ub *UbloxBluetooth) GetDeviceCommsStats(mac string) (*SensorCommsStatitics
 
 // GetSensorCommsStatsDelta returns the delta of the initial and current statistics
 func (ub *UbloxBluetooth) GetSensorCommsStatsDelta(mac string, initial *SensorCommsStatitics) (*SensorCommsStatitics, error) {
-	stats, ok := ub.CommsStats[mac]
-	if !ok {
-		return nil, fmt.Errorf("No stats for device %v on dongle %v", mac, ub.GetDeviceIndex())
-	}
+	finishStats := ub.GetSerialPortStats()
 	return &SensorCommsStatitics{
-		TotalBytesTxed:    stats.TotalBytesTxed - initial.TotalBytesTxed,
-		TotalBytesRxed:    stats.TotalBytesRxed - initial.TotalBytesRxed,
-		TotalConnections:  stats.TotalConnections - initial.TotalConnections,
-		ConnectionsFailed: stats.ConnectionsFailed - initial.ConnectionsFailed,
-		TimeCommunicating: stats.TimeCommunicating - initial.TimeCommunicating,
+		TotalBytesTxed: finishStats.TxBytes - initial.TotalBytesTxed,
+		TotalBytesRxed: finishStats.RxBytes - initial.TotalBytesRxed,
 	}, nil
 }
