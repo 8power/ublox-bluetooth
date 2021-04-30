@@ -4,7 +4,10 @@ go 1.12
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
+	github.com/btccom/secp256k1-go v0.0.0-20170920143146-f7178bcde578
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1 v1.0.3
+	github.com/decred/dcrd/dcrec/secp256k1/v3 v3.0.0
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/google/martian v2.1.0+incompatible
 	github.com/kr/text v0.2.0 // indirect

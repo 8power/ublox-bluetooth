@@ -1,6 +1,7 @@
 package ubloxbluetooth
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -13,6 +14,11 @@ import (
 
 // ErrNotConnected issued if there is no device connected
 var ErrNotConnected = fmt.Errorf("Not Connected")
+
+// ErrDfuPayloadTooBig...
+var ErrDfuPayloadTooBig = fmt.Errorf("DFU payload too big")
+
+var ErrBadECDHKey = fmt.Errorf("Invalid ECDH key")
 
 // DiscoveryReply BLE discovery structure
 type DiscoveryReply struct {
@@ -353,4 +359,57 @@ func NewRecorderMetaDataReply(s string) *RecorderMetaDataReply {
 // NewDownloadCRC returns an integer
 func NewDownloadCRC(s string) int {
 	return stringToInt(s[4:8])
+}
+
+// NewECDHPublicKeyReply gets the Sensors public key out of the reply
+func NewECDHPublicKeyReply(d []byte) ([]byte, error) {
+	t, err := splitOutResponse(d, exchangeECDHPublicKeyReply)
+	if err != nil {
+		return nil, err
+	}
+
+	pk, err := hex.DecodeString(t[4:])
+	if err != nil {
+		return nil, err
+	}
+
+	if len(pk) != 64 {
+		return nil, ErrBadECDHKey
+	}
+
+	return pk, nil
+}
+
+func NewDfuInitReply(d []byte) (uint16, error) {
+	t, err := splitOutResponse(d, dfuInitReply)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint16(stringToInt(t[6:10])), nil
+}
+
+func NewDfuPacketReply(d []byte) (uint16, error) {
+	t, err := splitOutResponse(d, dfuInitReply)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint16(stringToInt(t[4:8])), nil
+}
+
+// NewSemVerVersionReply returns the SemVer version number - or an error
+func NewSemVerVersionReply(d []byte) (string, error) {
+	t, err := splitOutResponse(d, semVerVersionReply)
+	if err != nil {
+		return "", err
+	}
+
+	ver, err := hex.DecodeString(string(t[4:]))
+	if err != nil {
+		return "", err
+	}
+
+	s := string(bytes.ReplaceAll(ver, []byte("\x00"), []byte("")))
+	return s, nil
 }

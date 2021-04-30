@@ -37,15 +37,19 @@ func GetFTDIDevPaths() ([]*BtdSerial, error) {
 		tokens := strings.Split(scanner.Text(), " ")
 		index := strings.Split(tokens[0], ":")
 		module := strings.Split(tokens[1], ":")
-		if module[1] == "ftdi_sio" {
-			portNo, err := strconv.Atoi(index[0])
-			if err == nil {
-				serialPorts = append(serialPorts, &BtdSerial{
-					SerialPort: fmt.Sprintf("/dev/ttyUSB%s", index[0]),
-					PortNo:     portNo,
-				})
-			} else {
-				return nil, errors.Wrap(err, "Error parsing serial driver record")
+		if module[1] == "ftdi_sio" && len(tokens) > 7 {
+			vendor := strings.Split(tokens[6], ":")
+			product := strings.Split(tokens[7], ":")
+			if vendor[1] == "0403" && product[1] == "6015" {
+				portNo, err := strconv.Atoi(index[0])
+				if err == nil {
+					serialPorts = append(serialPorts, &BtdSerial{
+						SerialPort: fmt.Sprintf("/dev/ttyUSB%s", index[0]),
+						PortNo:     portNo,
+					})
+				} else {
+					return nil, errors.Wrap(err, "Error parsing serial driver record")
+				}
 			}
 		}
 	}
