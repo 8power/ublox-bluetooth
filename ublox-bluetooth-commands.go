@@ -11,6 +11,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	// ErrBothScansFailed returned if both device scans failed
+	ErrBothScansFailed = fmt.Errorf("Both bluetooth scans failed")
+
+	// ErrBothScansFailed returned if one of the two device scans failed
+	ErrOneOfTheScansFailed = fmt.Errorf("One of the bluetooth scans failed")
+)
+
 func (ub *UbloxBluetooth) writeAndWait(r CmdResp, waitForData bool) ([]byte, error) {
 	err := ub.Write(r.Cmd)
 	if err != nil {
@@ -147,7 +155,17 @@ func (btd *BluetoothDevices) MultiDiscoverWithContext(ctx context.Context, scant
 	// Don't concatenate errors. We need to spot the ContextCancelled error
 	err = <-errChan
 	if noOfDevices == 2 {
-		err = <-errChan
+		err2 := <-errChan
+
+		if err2 != nil {
+			if err != nil {
+				return ErrBothScansFailed
+			} else {
+				return ErrOneOfTheScansFailed
+			}
+		} else if err != nil {
+			return ErrOneOfTheScansFailed
+		}
 	}
 
 	return err
@@ -160,18 +178,18 @@ func (ub *UbloxBluetooth) discoveryCommandWithContext(ctx context.Context, scant
 	err := ub.Write(dc.Cmd)
 	if err != nil {
 		ec <- err
-	}
+	} else {
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- ub.handleDiscovery(dc.Resp, drChan)
+		}()
 
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- ub.handleDiscovery(dc.Resp, drChan)
-	}()
-
-	select {
-	case e := <-errChan:
-		ec <- e
-	case <-ctx.Done():
-		ec <- ErrorContextCancelled
+		select {
+		case e := <-errChan:
+			ec <- e
+		case <-ctx.Done():
+			ec <- ErrorContextCancelled
+		}
 	}
 }
 

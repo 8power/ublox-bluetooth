@@ -1,6 +1,8 @@
 package ubloxbluetooth
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
@@ -53,4 +55,39 @@ func (ub *UbloxBluetooth) EnterCommandMode() error {
 // ResetUblox calls the Serial port's ResetViaDTR
 func (ub *UbloxBluetooth) ResetUblox() error {
 	return ub.serialPort.ResetViaDTR()
+}
+
+// ResetUbloxSync calls the Serial port's ResetViaDTR and does not return until
+// the ublox module has indicated it is ready
+func (ub *UbloxBluetooth) ResetUbloxSync() error {
+	if ub.rebootExpected {
+		return fmt.Errorf("[ResetUblox] Reset outstanding error")
+	}
+
+	ub.rebootExpected = true
+	err := ub.serialPort.ResetViaDTR()
+
+	if err != nil {
+		return errors.Wrap(err, "[ResetUblox] error")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*4)
+	defer cancel()
+
+	select {
+	case <-ub.rebootDetected:
+
+	case <-ctx.Done():
+		// Should take no more than a second for 750/751. 753/754 take slightly longer
+		return fmt.Errorf("[ResetUblox] Reset timed out error")
+	}
+
+	return nil
+}
+
+func (ub *UbloxBluetooth) signalUbloxReboot() {
+	if ub.rebootExpected {
+		ub.rebootDetected <- true
+		ub.rebootExpected = false
+	}
 }
