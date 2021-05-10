@@ -18,6 +18,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	MTU_SIZE = 236
+)
+
 func Test_GetSemVer(t *testing.T) {
 	btd, err := InitUbloxBluetooth(timeout, nil)
 	if err != nil {
@@ -73,7 +77,7 @@ func Test_GetSemVer(t *testing.T) {
 	}
 }
 
-func Test_ECDHexchange(t *testing.T) {
+func Test_Dfu(t *testing.T) {
 	btd, err := InitUbloxBluetooth(timeout, nil)
 	if err != nil {
 		t.Fatalf("InitUbloxBluetooth error %v", err)
@@ -103,8 +107,20 @@ func Test_ECDHexchange(t *testing.T) {
 	}
 
 	mac := os.Getenv("DEVICE_MAC")
-	err = ub.ConnectToDevice(mac, func(ub *UbloxBluetooth) error {
-		defer ub.DisconnectFromDevice()
+	err = ub.ConnectToDevice(mac, func(ub *UbloxBluetooth) (e error) {
+		dfu_in_progress := false
+		upgrade_issued := false
+
+		defer func() {
+			if e != nil {
+				if dfu_in_progress {
+					ub.DfuAbort()
+				}
+			}
+			if !upgrade_issued {
+				ub.DisconnectFromDevice()
+			}
+		}()
 
 		time.Sleep(20 * time.Millisecond)
 
@@ -152,9 +168,10 @@ func Test_ECDHexchange(t *testing.T) {
 
 		// Create a psuedo executable
 		rand.Seed(time.Now().Unix())
-		psuedoCode := make([]byte, 32768-rand.Intn(14)-1)
-		crand.Read(psuedoCode)
-		imageLength := len(psuedoCode)
+		psuedoCode := make([]byte, 32768-aes.BlockSize-rand.Intn(14)-1)
+		for i := 0; i < len(psuedoCode); i++ {
+			psuedoCode[i] = byte(i % 256)
+		}
 		psuedoCode = pkcs7Pad(psuedoCode, aes.BlockSize)
 
 		// Prep encrypted output
@@ -166,6 +183,10 @@ func Test_ECDHexchange(t *testing.T) {
 		encryptedCode := make([]byte, len(psuedoCode)+aes.BlockSize)
 		iv := encryptedCode[:aes.BlockSize]
 		crand.Read(iv)
+		imageLength := len(encryptedCode)
+		if imageLength > 32768 {
+			t.Errorf("Image too large to fit into flash")
+		}
 
 		// Do the encryption
 		mode := cipher.NewCBCEncrypter(block, iv)
@@ -181,8 +202,28 @@ func Test_ECDHexchange(t *testing.T) {
 		}
 
 		signature := sign.Serialize()
-		var s [64]byte
-		copy(s[:], signature[:])
+		t.Log("DER Signature     \r\n", hex.Dump(signature[:]))
+
+		var r []byte
+		var s []byte
+
+		// Convert from DER to 64byte (r,s) format
+		rLen := int(signature[3])
+		switch rLen {
+		case 0x20:
+			r = signature[4:36]
+			s = signature[38:70]
+		case 0x21:
+			r = signature[5:37]
+			s = signature[39:71]
+		default:
+			t.Errorf("Invalid DER signature")
+		}
+
+		rs := append(r, s...)
+
+		var sig [64]byte
+		copy(sig[:], rs[:])
 
 		var ver [32]byte
 		version := "v1.2.3\u0000" // Make it a C string
@@ -191,10 +232,10 @@ func Test_ECDHexchange(t *testing.T) {
 		dp := &DfuParams{
 			ImgFlags:      0x01, // Psuedo Application
 			DfuCtx:        1,
-			MtuSize:       236,
+			MtuSize:       MTU_SIZE,
 			StartingSeqNo: 0,
 			HashSha256:    hash,
-			Signature:     s,
+			Signature:     sig,
 			ImgQspiOffset: 156,
 			ImgLength:     uint32(imageLength),
 			ImgVersion:    ver,
@@ -203,19 +244,49 @@ func Test_ECDHexchange(t *testing.T) {
 		}
 
 		t.Log("HashSha256        \r\n", hex.Dump(hash[:]))
-		t.Log("Signature         \r\n", hex.Dump(s[:]))
+		t.Log("Signature         \r\n", hex.Dump(sig[:]))
 		t.Log("ImgVersion        \r\n", hex.Dump(ver[:]))
 
 		_, err = ub.DfuInit(dp)
 		if err != nil {
 			return errors.Wrapf(err, "ub.DfuInit failed:")
 		}
+		dfu_in_progress = true
 
-		err = ub.DfuAbort()
-		if err != nil {
-			return errors.Wrapf(err, "ub.DfuInit failed:")
+		var seq_no uint16 = 0
+		offset := 0
+		size := MTU_SIZE
+		for imageLength > 0 {
+			if imageLength < MTU_SIZE {
+				size = imageLength
+			}
+
+			next_seq_no, err := ub.DfuPacket(seq_no, encryptedCode[offset:offset+size])
+			if err != nil {
+				return errors.Wrapf(err, "ub.DfuPacket failed:")
+			}
+
+			if next_seq_no != seq_no+1 {
+				t.Errorf("Invalid Sequence number")
+			}
+
+			offset += MTU_SIZE
+			seq_no++
+			imageLength -= MTU_SIZE
 		}
 
+		err = ub.DfuXferDone()
+		if err != nil {
+			return errors.Wrapf(err, "ub.DfuXferDone failed:")
+		}
+		dfu_in_progress = false
+
+		err = ub.DfuUpgrade()
+		if err != nil {
+			return errors.Wrapf(err, "ub.DfuUpgrade failed:")
+		}
+
+		upgrade_issued = true
 		return nil
 	}, func(ub *UbloxBluetooth) error {
 		return fmt.Errorf("Disconnected")
@@ -240,6 +311,7 @@ func Test_ECDHprotocol(t *testing.T) {
 	// Derive an ephemeral public/private keypair for performing ECDHE with
 	my_pvt_key := "eaf02ca348c524e6392655ba4d29603cd1a7347d9d65cfe93ce1ebffdca22694"
 	others_public_key := "C4EC90A94EA2D690952644FE8AA8C79D7DDF9B4B2D92A15018674C1A50E45088977EFA1F08E7656041333DE278DD2DAF8878165BFB962273260F1D5BC8373A64"
+	raw_data := []byte("0123456789abcdef0123456789abcdef0123456789abcdef")
 
 	prk, _ := hex.DecodeString(my_pvt_key)
 	PrivKey := secp256k1.PrivKeyFromBytes(prk)
@@ -260,6 +332,43 @@ func Test_ECDHprotocol(t *testing.T) {
 	t.Log("My public Key     \r\n", hex.Dump(PubKey[1:]))
 	t.Log("Others public Key \r\n", hex.Dump(remotePK.SerializeUncompressed()[1:]))
 	t.Log("Shared secret     \r\n", hex.Dump(sharedSecret))
+	t.Log("Raw Data          \r\n", hex.Dump(raw_data))
+
+	// Calculate hash and signature
+	hash := sha256.Sum256(raw_data[:])
+	sign := ecdsa.Sign(PrivKey, hash[:])
+
+	// verify its kosher
+	if sign.Verify(hash[:], PrivKey.PubKey()) == false {
+		t.Log("sign.Verify failed:")
+	}
+
+	signature := sign.Serialize()
+	t.Log("DER Signature     \r\n", hex.Dump(signature[:]))
+
+	var r []byte
+	var s []byte
+
+	// Convert from DER to 64byte (r,s) format
+	rLen := int(signature[3])
+	switch rLen {
+	case 0x20:
+		r = signature[4:36]
+		s = signature[38:70]
+	case 0x21:
+		r = signature[5:37]
+		s = signature[39:71]
+	default:
+		t.Errorf("Invalid DER signature")
+	}
+
+	sig2 := append(r, s...)
+
+	t.Log("r         \r\n", hex.Dump(r[:]))
+	t.Log("s         \r\n", hex.Dump(s[:]))
+
+	t.Log("HashSha256        \r\n", hex.Dump(hash[:]))
+	t.Log("Signature         \r\n", hex.Dump(sig2[:]))
 
 	/*
 		// Create a psuedo executable
@@ -317,5 +426,7 @@ func Test_ECDHprotocol(t *testing.T) {
 		t.Log("HashSha256        \r\n", hex.Dump(hash[:]))
 		t.Log("Signature         \r\n", hex.Dump(s[:]))
 		t.Log("ImgVersion        \r\n", hex.Dump(ver[:]))
+		0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+		fc7913e6b7a2c371515b70ac6c27fa44f1f6a05bd4bae833f022af93c7b54c4b22a7df25e1b449a366eda289d3a2060241e5302d821e32dc4082dc0cdcb03ed9
 	*/
 }

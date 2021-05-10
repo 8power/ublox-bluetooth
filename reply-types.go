@@ -390,7 +390,7 @@ func NewDfuInitReply(d []byte) (uint16, error) {
 }
 
 func NewDfuPacketReply(d []byte) (uint16, error) {
-	t, err := splitOutResponse(d, dfuInitReply)
+	t, err := splitOutResponse(d, dfuPacketReply)
 	if err != nil {
 		return 0, err
 	}
