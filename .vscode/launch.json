@@ -13,7 +13,7 @@
             "env": {
                 "DEVICE_MAC":"EAA4997A81C4r"
             },
-            "args": [""]
+            "args": ["-v"]
         },
         {
             "name": "Reset",

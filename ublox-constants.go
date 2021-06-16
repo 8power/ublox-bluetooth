@@ -110,3 +110,5 @@ var aclConnectionRemoteDeviceResponse = []byte(aclConnectionRemoteDeviceResponse
 var tail = []byte{'\r', '\n'}
 var separator = []byte(":")
 var comma = []byte{0x2C}
+
+const DfuPayloadMTU = 236

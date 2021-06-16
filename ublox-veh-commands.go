@@ -35,9 +35,31 @@ var (
 	rssiCommand             = []byte{0x24}
 	perTestCommand          = []byte{0x25}
 	liveFFTCommand          = []byte{0x26}
+	dfuInitCommand          = []byte{0x27}
+	dfuPacketCommand        = []byte{0x28}
+	dfuXferDoneCommand      = []byte{0x29}
+	dfuUpgradeCommand       = []byte{0x2A}
+	dfuAbortCommand         = []byte{0x2B}
+	oobKeyCommand           = []byte{0x2C}
+	ecdhPublicKeyCommand    = []byte{0x2D}
+	getSemVerVersionCommand = []byte{0x2E}
 	setConfigExtCommand     = []byte{0x80}
 	getConfigExtCommand     = []byte{0x81}
 )
+
+type DfuParams struct {
+	ImgFlags      uint8
+	DfuCtx        uint8
+	MtuSize       uint16
+	StartingSeqNo uint32
+	HashSha256    [32]byte
+	Signature     [64]byte
+	ImgQspiOffset uint32
+	ImgLength     uint32
+	ImgVersion    [32]byte
+	CodeBase      uint32
+	SdVersion     uint8
+}
 
 func (ub *UbloxBluetooth) newCharacteristicCommand(handle int, data []byte) characteristicCommand {
 	return characteristicCommand{
@@ -259,7 +281,7 @@ func (ub *UbloxBluetooth) EchoCommand(data string) (bool, error) {
 	c := ub.newCharacteristicCommand(commandValueHandle, echoCommand)
 	d, err := ub.writeAndWait(writeCharacteristicCommand(c), true)
 	if err != nil {
-		return false, errors.Wrap(err, "RecorderInfo error")
+		return false, errors.Wrap(err, "EchoCommand error")
 	}
 	return ProcessEchoReply(d)
 }
@@ -397,4 +419,104 @@ func (ub *UbloxBluetooth) downloadData(command []byte, commandParameters string,
 		return errors.Wrap(err, "[downloadData] processEventsReply error")
 	}
 	return ub.HandleDataDownload(stringToInt(t[lengthOffset-4:]), reply, dnh, dih)
+}
+
+// DfuInit Initialises a DFU session
+func (ub *UbloxBluetooth) DfuInit(dp *DfuParams) (uint16, error) {
+	if ub.connectedDevice == nil {
+		return 0xffff, ErrNotConnected
+	}
+
+	dfu := make([]byte, 150)
+	dfu[0] = dfuInitCommand[0]
+	dfu[1] = byte(dp.ImgFlags)
+	dfu[2] = byte(dp.DfuCtx)
+	binary.LittleEndian.PutUint16(dfu[3:], dp.MtuSize)
+	binary.LittleEndian.PutUint32(dfu[5:], dp.StartingSeqNo)
+	copy(dfu[9:], dp.HashSha256[:])
+	copy(dfu[41:], dp.Signature[:])
+	binary.LittleEndian.PutUint32(dfu[105:], dp.ImgQspiOffset)
+	binary.LittleEndian.PutUint32(dfu[109:], dp.ImgLength)
+	copy(dfu[113:], dp.ImgVersion[:])
+	binary.LittleEndian.PutUint32(dfu[145:], dp.CodeBase)
+	dfu[149] = dp.SdVersion
+
+	c := ub.newCharacteristicCommand(commandValueHandle, dfu)
+	reply, err := ub.writeAndWait(writeCharacteristicCommand(c), true)
+	if err != nil {
+		return 0xffff, errors.Wrap(err, "DfuInit Command error")
+	}
+
+	return NewDfuInitReply(reply)
+}
+
+// DfuPacket send a firmware packet
+func (ub *UbloxBluetooth) DfuPacket(seqNo uint16, pl []byte) (uint16, error) {
+	if ub.connectedDevice == nil {
+		return 0xffff, ErrNotConnected
+	}
+
+	if len(pl) > DfuPayloadMTU {
+		return 0xffff, ErrDfuPayloadTooBig
+	}
+
+	cmd := make([]byte, 5)
+	cmd[0] = dfuPacketCommand[0]
+	binary.LittleEndian.PutUint16(cmd[1:], seqNo)
+	binary.LittleEndian.PutUint16(cmd[3:], 0)
+	cmd = append(cmd, pl...)
+
+	c := ub.newCharacteristicCommand(commandValueHandle, cmd)
+	reply, err := ub.writeAndWait(writeCharacteristicCommand(c), true)
+	if err != nil {
+		return 0xffff, errors.Wrap(err, "DfuPacket Command error")
+	}
+
+	return NewDfuPacketReply(reply)
+}
+
+// DfuXferDone signals the end of the firmware transfer session
+func (ub *UbloxBluetooth) DfuXferDone() error {
+	return ub.simpleCommand(dfuXferDoneCommand)
+}
+
+// DfuUpgrade inform the sensor to upgrade the firmware that has been sent
+func (ub *UbloxBluetooth) DfuUpgrade() error {
+	return ub.simpleCommand(dfuUpgradeCommand)
+}
+
+// DfuAbort aborts the current upgrade session
+func (ub *UbloxBluetooth) DfuAbort() error {
+	return ub.simpleCommand(dfuAbortCommand)
+}
+
+// ExchangeECDHPublicKeys exchange ECDH public keys
+func (ub *UbloxBluetooth) ExchangeECDHPublicKeys(gwPublicKey []byte) ([]byte, error) {
+	if ub.connectedDevice == nil {
+		return nil, ErrNotConnected
+	}
+	if len(gwPublicKey) != 64 {
+		return nil, fmt.Errorf("ExchangeECDHPublicKeys public key not 64 characters long")
+	}
+	c := ub.newCharacteristicCommand(commandValueHandle, append(ecdhPublicKeyCommand, gwPublicKey...))
+	d, err := ub.writeAndWait(writeCharacteristicCommand(c), true)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ExchangeECDHPublicKeys error")
+	}
+
+	return NewECDHPublicKeyReply(d)
+}
+
+// GetSemVerVersion request the connected device's SemVer version number
+func (ub *UbloxBluetooth) GetSemVerVersion() (string, error) {
+	if ub.connectedDevice == nil {
+		return "", ErrNotConnected
+	}
+
+	c := ub.newCharacteristicCommand(commandValueHandle, getSemVerVersionCommand)
+	d, err := ub.writeAndWait(writeCharacteristicCommand(c), true)
+	if err != nil {
+		return "", errors.Wrapf(err, "GetVersion error")
+	}
+	return NewSemVerVersionReply(d)
 }

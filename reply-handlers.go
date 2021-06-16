@@ -29,6 +29,10 @@ const readRecorderReply = "21"
 const queryRecorderMetaDataReply = "22"
 const readRecorderDataReply = "23"
 const rssiReply = "24"
+const dfuInitReply = "27"
+const dfuPacketReply = "28"
+const exchangeECDHPublicKeyReply = "2D"
+const semVerVersionReply = "2E"
 
 func isIndicationResponseValid(sa []string) bool {
 	return sa[0] == "0" && sa[1] == "13"
